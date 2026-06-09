@@ -2,8 +2,19 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { v4 as uuidv4 } from 'uuid';
 import dayjs from 'dayjs';
+import type {
+  SimulationTask,
+  SimulationParameters,
+  MicrobeSpecies,
+  CarbonPool,
+  ExtracellularEnzyme,
+  ApprovalRecord,
+  CarbonPoolName,
+} from '@shared/types';
 
-export type SimulationStatus =
+export type { SimulationTask } from '@shared/types';
+
+export type LegacySimulationStatus =
   | 'draft'
   | 'pending_approval'
   | 'approved'
@@ -34,11 +45,11 @@ export interface SimulationResult {
   dataPoints: { time: number; biomass: number; ph: number; oxygen: number }[];
 }
 
-export interface SimulationTask {
+export interface LegacySimulationTask {
   id: string;
   name: string;
   description?: string;
-  status: SimulationStatus;
+  status: LegacySimulationStatus;
   params: SimulationParams;
   result?: SimulationResult;
   createdBy: string;
@@ -56,25 +67,41 @@ export interface SimulationTask {
 }
 
 interface SimulationStore {
-  tasks: SimulationTask[];
-  currentTask: SimulationTask | null;
+  tasks: (SimulationTask | LegacySimulationTask)[];
+  currentTask: SimulationTask | LegacySimulationTask | null;
   loading: boolean;
   error: string | null;
 
   fetchTasks: () => Promise<void>;
-  getTaskById: (id: string) => SimulationTask | undefined;
-  createTask: (data: Omit<SimulationTask, 'id' | 'status' | 'createdAt' | 'updatedAt' | 'progress'> & { status?: SimulationStatus }) => SimulationTask;
-  updateTask: (id: string, updates: Partial<SimulationTask>) => void;
+  getTaskById: (id: string) => SimulationTask | LegacySimulationTask | undefined;
+  createTask: (data: {
+    soilData: {
+      sampleId: string;
+      ph: number;
+      organicMatter: number;
+      temperature: number;
+      moisture: number;
+      soilType: string;
+      notes?: string;
+    };
+    metagenomicsFileId: string;
+    fileName?: string;
+    name?: string;
+    createdBy: string;
+    createdByName?: string;
+    parameters?: Partial<SimulationParameters>;
+  }) => SimulationTask;
+  updateTask: (id: string, updates: Partial<SimulationTask | LegacySimulationTask>) => void;
   deleteTask: (id: string) => void;
-  setCurrentTask: (task: SimulationTask | null) => void;
-  fetchDetail: (id: string) => Promise<SimulationTask | null>;
+  setCurrentTask: (task: SimulationTask | LegacySimulationTask | null) => void;
+  fetchDetail: (id: string) => Promise<SimulationTask | LegacySimulationTask | null>;
 
   submitForApproval: (id: string) => void;
   startSimulation: (id: string) => Promise<void>;
   cancelSimulation: (id: string) => void;
   resetSimulation: (id: string) => void;
 
-  filterByStatus: (status: SimulationStatus | SimulationStatus[]) => SimulationTask[];
+  filterByStatus: (status: LegacySimulationStatus | LegacySimulationStatus[]) => (SimulationTask | LegacySimulationTask)[];
   getStats: () => {
     total: number;
     draft: number;
@@ -95,6 +122,16 @@ const defaultParams: SimulationParams = {
   duration: 72,
   strainType: '大肠杆菌',
   initialConcentration: 0.5,
+};
+
+const defaultNewParams: SimulationParameters = {
+  simulationDays: 30,
+  timeStepHours: 4,
+  temperatureModel: 'CONSTANT',
+  moistureModel: 'CONSTANT',
+  co2BaselineUpper: 420,
+  co2BaselineLower: 380,
+  enzymeDropThreshold: 30,
 };
 
 const generateMockResult = (params: SimulationParams): SimulationResult => {
@@ -119,7 +156,7 @@ const generateMockResult = (params: SimulationParams): SimulationResult => {
   };
 };
 
-const initialMockTasks: SimulationTask[] = [
+const initialMockTasks: LegacySimulationTask[] = [
   {
     id: 'sim-001',
     name: '高温条件下枯草芽孢杆菌生长模拟',
@@ -213,6 +250,94 @@ const initialMockTasks: SimulationTask[] = [
   },
 ];
 
+const DEFAULT_MICROBES: Omit<MicrobeSpecies, 'id' | 'simulationId'>[] = [
+  {
+    taxId: 'txid28901',
+    name: 'Pseudomonas putida',
+    kingdom: 'Bacteria',
+    phylum: 'Proteobacteria',
+    class: 'Gammaproteobacteria',
+    order: 'Pseudomonadales',
+    family: 'Pseudomonadaceae',
+    genus: 'Pseudomonas',
+    species: 'Pseudomonas putida',
+    relativeAbundance: 0.28,
+    functions: ['芳香族化合物降解', '铁载体分泌', '根际促生'],
+  },
+  {
+    taxId: 'txid135621',
+    name: 'Rhizobium leguminosarum',
+    kingdom: 'Bacteria',
+    phylum: 'Proteobacteria',
+    class: 'Alphaproteobacteria',
+    order: 'Hyphomicrobiales',
+    family: 'Rhizobiaceae',
+    genus: 'Rhizobium',
+    species: 'Rhizobium leguminosarum',
+    relativeAbundance: 0.22,
+    functions: ['生物固氮', '结瘤因子合成', '植物激素调节'],
+  },
+  {
+    taxId: 'txid546',
+    name: 'Bacillus subtilis',
+    kingdom: 'Bacteria',
+    phylum: 'Firmicutes',
+    class: 'Bacilli',
+    order: 'Bacillales',
+    family: 'Bacillaceae',
+    genus: 'Bacillus',
+    species: 'Bacillus subtilis',
+    relativeAbundance: 0.18,
+    functions: ['抗生素合成', '有机质分解', '生物膜形成'],
+  },
+  {
+    taxId: 'txid1280',
+    name: 'Streptomyces coelicolor',
+    kingdom: 'Bacteria',
+    phylum: 'Actinobacteria',
+    class: 'Actinomycetes',
+    order: 'Streptomycetales',
+    family: 'Streptomycetaceae',
+    genus: 'Streptomyces',
+    species: 'Streptomyces coelicolor',
+    relativeAbundance: 0.15,
+    functions: ['放线菌酮合成', '几丁质降解', '纤维素分解'],
+  },
+  {
+    taxId: 'txid2678',
+    name: 'Aspergillus niger',
+    kingdom: 'Fungi',
+    phylum: 'Ascomycota',
+    class: 'Eurotiomycetes',
+    order: 'Eurotiales',
+    family: 'Aspergillaceae',
+    genus: 'Aspergillus',
+    species: 'Aspergillus niger',
+    relativeAbundance: 0.10,
+    functions: ['果胶酶分泌', '有机酸生成', '多糖分解'],
+  },
+];
+
+const DEFAULT_CARBON_POOLS: Omit<CarbonPool, 'id' | 'simulationId'>[] = [
+  { poolName: '活性碳库', initialAmount: 420, currentAmount: 420, decompositionRate: 0.025, turnoverTime: 40 },
+  { poolName: '慢性碳库', initialAmount: 2800, currentAmount: 2800, decompositionRate: 0.0035, turnoverTime: 286 },
+  { poolName: '惰性碳库', initialAmount: 11200, currentAmount: 11200, decompositionRate: 0.00012, turnoverTime: 22800 },
+  { poolName: '微生物生物量碳', initialAmount: 180, currentAmount: 180, decompositionRate: 0.018, turnoverTime: 56 },
+  { poolName: 'DOC', initialAmount: 58, currentAmount: 58, decompositionRate: 0.04, turnoverTime: 25 },
+  { poolName: 'POC', initialAmount: 210, currentAmount: 210, decompositionRate: 0.012, turnoverTime: 83 },
+];
+
+const DEFAULT_ENZYMES: Omit<ExtracellularEnzyme, 'id' | 'simulationId'>[] = [
+  { enzymeName: 'β-葡萄糖苷酶', ecNumber: '3.2.1.21', substrate: '纤维二糖', product: '葡萄糖', activity: 4.2, km: 0.8, vmax: 8.5, optimalPH: 5.5, optimalTemp: 35, encodingGenes: ['bgl1', 'bgl4'] },
+  { enzymeName: '几丁质酶', ecNumber: '3.2.1.14', substrate: '几丁质', product: 'N-乙酰氨基葡萄糖', activity: 2.8, km: 1.2, vmax: 6.3, optimalPH: 6.2, optimalTemp: 30, encodingGenes: ['chiA', 'chiC'] },
+  { enzymeName: '蛋白酶', ecNumber: '3.4.21.-', substrate: '蛋白质肽键', product: '氨基酸/寡肽', activity: 3.6, km: 0.5, vmax: 9.1, optimalPH: 7.0, optimalTemp: 37, encodingGenes: ['serP1', 'metP'] },
+  { enzymeName: '酸性磷酸酶', ecNumber: '3.1.3.2', substrate: '有机磷单酯', product: '磷酸根', activity: 5.1, km: 0.3, vmax: 11.8, optimalPH: 5.2, optimalTemp: 33, encodingGenes: ['phoA', 'phoD'] },
+  { enzymeName: '脲酶', ecNumber: '3.5.1.5', substrate: '尿素', product: '氨+CO2', activity: 3.9, km: 0.7, vmax: 8.2, optimalPH: 6.8, optimalTemp: 38, encodingGenes: ['ureA', 'ureC'] },
+  { enzymeName: '木质素过氧化物酶', ecNumber: '1.11.1.14', substrate: '木质素单体', product: '自由基中间体', activity: 1.4, km: 0.9, vmax: 3.2, optimalPH: 4.8, optimalTemp: 28, encodingGenes: ['lipA', 'lipH'] },
+  { enzymeName: '脱氢酶', ecNumber: '1.1.1.-', substrate: '呼吸链底物', product: '还原当量', activity: 2.2, km: 0.6, vmax: 5.4, optimalPH: 7.2, optimalTemp: 35, encodingGenes: ['sdhA', 'mdh1'] },
+  { enzymeName: '纤维素酶', ecNumber: '3.2.1.4', substrate: '纤维素', product: '纤维寡糖', activity: 3.1, km: 1.5, vmax: 7.6, optimalPH: 5.8, optimalTemp: 32, encodingGenes: ['celA', 'celE'] },
+];
+
 export const useSimulationStore = create<SimulationStore>()(
   persist(
     (set, get) => ({
@@ -233,22 +358,99 @@ export const useSimulationStore = create<SimulationStore>()(
 
       createTask: (data) => {
         const now = new Date().toISOString();
-        const newTask: SimulationTask = {
-          id: `sim-${uuidv4().slice(0, 8)}`,
-          status: 'draft',
-          progress: 0,
-          createdAt: now,
-          updatedAt: now,
-          ...data,
+        const id = `sim-${uuidv4().slice(0, 8)}`;
+        const taskNo = `SS-2026-${Math.floor(10000 + Math.random() * 90000)}`;
+        const dateStr = dayjs(now).format('YYYYMMDD');
+        const taskName = data.name || `${data.soilData.sampleId}-${dateStr}`;
+
+        const parameters: SimulationParameters = {
+          ...defaultNewParams,
+          ...data.parameters,
         };
+
+        const microbes: MicrobeSpecies[] = DEFAULT_MICROBES.map((m) => ({
+          id: `mic-${uuidv4().slice(0, 8)}`,
+          simulationId: id,
+          ...m,
+        }));
+
+        const carbonPoolNames: CarbonPoolName[] = ['活性碳库', '慢性碳库', '惰性碳库', '微生物生物量碳', 'DOC', 'POC'];
+        const carbonPools: CarbonPool[] = DEFAULT_CARBON_POOLS.map((p, idx) => ({
+          id: `cpl-${uuidv4().slice(0, 8)}`,
+          poolName: carbonPoolNames[idx] || p.poolName,
+          simulationId: id,
+          initialAmount: p.initialAmount + (Math.random() - 0.5) * p.initialAmount * 0.1,
+          currentAmount: p.currentAmount + (Math.random() - 0.5) * p.currentAmount * 0.1,
+          decompositionRate: p.decompositionRate,
+          turnoverTime: p.turnoverTime,
+        }));
+
+        const enzymes: ExtracellularEnzyme[] = DEFAULT_ENZYMES.map((e) => ({
+          id: `enz-${uuidv4().slice(0, 8)}`,
+          simulationId: id,
+          ...e,
+          activity: e.activity * (0.85 + Math.random() * 0.3),
+        }));
+
+        const approvals: ApprovalRecord[] = [
+          {
+            id: `apv-${uuidv4().slice(0, 8)}`,
+            simulationId: id,
+            stage: 'MICROBE_VALIDATION',
+            result: 'PENDING',
+            approverId: 'u-microbe',
+            approverName: '刘验证',
+            approverRole: 'MICROBE_VALIDATOR',
+            submittedAt: now,
+          },
+          {
+            id: `apv-${uuidv4().slice(0, 8)}`,
+            simulationId: id,
+            stage: 'SOIL_HEALTH_EXPERT',
+            result: 'PENDING',
+            approverId: 'u-soil',
+            approverName: '赵土壤',
+            approverRole: 'SOIL_EXPERT',
+            submittedAt: now,
+          },
+        ];
+
+        const newTask: SimulationTask = {
+          id,
+          taskNo,
+          name: taskName,
+          soilDataId: `soil-${uuidv4().slice(0, 8)}`,
+          metagenomicsFileId: data.metagenomicsFileId,
+          status: 'PENDING_VALIDATION',
+          statusHistory: [
+            {
+              status: 'PENDING_VALIDATION',
+              timestamp: now,
+              operatorId: data.createdBy,
+              remark: '任务创建，等待双级审批',
+            },
+          ],
+          parameters,
+          currentProgress: 0,
+          microbes,
+          carbonPools,
+          enzymes,
+          timeSeriesData: [],
+          warnings: [],
+          adjustmentLogs: [],
+          approvals,
+          createdAt: now,
+          createdBy: data.createdBy,
+        };
+
         set((state) => ({ tasks: [newTask, ...state.tasks] }));
         return newTask;
       },
 
-      updateTask: (id: string, updates: Partial<SimulationTask>) => {
+      updateTask: (id: string, updates) => {
         set((state) => ({
           tasks: state.tasks.map((t) =>
-            t.id === id ? { ...t, ...updates, updatedAt: new Date().toISOString() } : t
+            t.id === id ? { ...t, ...updates } as SimulationTask | LegacySimulationTask : t
           ),
         }));
       },
@@ -260,7 +462,7 @@ export const useSimulationStore = create<SimulationStore>()(
         }));
       },
 
-      setCurrentTask: (task: SimulationTask | null) => {
+      setCurrentTask: (task) => {
         set({ currentTask: task });
       },
 
@@ -273,18 +475,20 @@ export const useSimulationStore = create<SimulationStore>()(
       },
 
       submitForApproval: (id: string) => {
-        get().updateTask(id, { status: 'pending_approval' });
+        get().updateTask(id, { status: 'pending_approval' as LegacySimulationStatus });
       },
 
       startSimulation: async (id: string) => {
         const task = get().getTaskById(id);
-        if (!task || (task.status !== 'approved' && task.status !== 'draft')) return;
+        if (!task) return;
+        const isLegacy = 'params' in task;
+        if (!isLegacy || (task.status !== 'approved' && task.status !== 'draft')) return;
 
         get().updateTask(id, {
           status: 'running',
           startedAt: new Date().toISOString(),
           progress: 0,
-        });
+        } as Partial<LegacySimulationTask>);
 
         const totalDuration = 3000;
         const interval = 100;
@@ -294,7 +498,7 @@ export const useSimulationStore = create<SimulationStore>()(
         const timer = setInterval(() => {
           step++;
           const current = get().getTaskById(id);
-          if (!current || current.status !== 'running') {
+          if (!current || ('params' in current && current.status !== 'running')) {
             clearInterval(timer);
             return;
           }
@@ -310,14 +514,15 @@ export const useSimulationStore = create<SimulationStore>()(
                 progress: Math.floor(Math.random() * 40) + 30,
                 completedAt: new Date().toISOString(),
                 notes: '模拟过程异常终止，请检查参数设置',
-              });
+              } as Partial<LegacySimulationTask>);
             } else {
+              const leg = current as LegacySimulationTask;
               get().updateTask(id, {
                 status: 'completed',
                 progress: 100,
                 completedAt: new Date().toISOString(),
-                result: generateMockResult(current.params),
-              });
+                result: generateMockResult(leg.params),
+              } as Partial<LegacySimulationTask>);
             }
           } else {
             get().updateTask(id, { progress });
@@ -328,8 +533,9 @@ export const useSimulationStore = create<SimulationStore>()(
       cancelSimulation: (id: string) => {
         const task = get().getTaskById(id);
         if (!task) return;
-        const updates: Partial<SimulationTask> = { status: 'cancelled' };
-        if (task.status === 'running') {
+        const isLegacy = 'params' in task;
+        const updates: Partial<LegacySimulationTask> = { status: 'cancelled' };
+        if (isLegacy && task.status === 'running') {
           updates.completedAt = new Date().toISOString();
         }
         get().updateTask(id, updates);
@@ -342,23 +548,26 @@ export const useSimulationStore = create<SimulationStore>()(
           startedAt: undefined,
           completedAt: undefined,
           result: undefined,
-        });
+        } as Partial<LegacySimulationTask>);
       },
 
-      filterByStatus: (status: SimulationStatus | SimulationStatus[]) => {
+      filterByStatus: (status) => {
         const statuses = Array.isArray(status) ? status : [status];
-        return get().tasks.filter((t) => statuses.includes(t.status));
+        return get().tasks.filter((t) => {
+          const isLegacy = 'params' in t;
+          return isLegacy && statuses.includes(t.status as LegacySimulationStatus);
+        });
       },
 
       getStats: () => {
         const { tasks } = get();
         return {
           total: tasks.length,
-          draft: tasks.filter((t) => t.status === 'draft').length,
-          running: tasks.filter((t) => t.status === 'running').length,
-          completed: tasks.filter((t) => t.status === 'completed').length,
-          failed: tasks.filter((t) => t.status === 'failed').length,
-          pending: tasks.filter((t) => t.status === 'pending_approval').length,
+          draft: tasks.filter((t) => 'params' in t && t.status === 'draft').length,
+          running: tasks.filter((t) => 'params' in t && t.status === 'running').length,
+          completed: tasks.filter((t) => 'params' in t && t.status === 'completed').length,
+          failed: tasks.filter((t) => 'params' in t && t.status === 'failed').length,
+          pending: tasks.filter((t) => 'params' in t && t.status === 'pending_approval').length,
         };
       },
     }),
@@ -369,7 +578,7 @@ export const useSimulationStore = create<SimulationStore>()(
   )
 );
 
-export const SIMULATION_STATUS_LABELS: Record<SimulationStatus, string> = {
+export const SIMULATION_STATUS_LABELS: Record<LegacySimulationStatus, string> = {
   draft: '草稿',
   pending_approval: '待审批',
   approved: '已批准',
@@ -379,7 +588,7 @@ export const SIMULATION_STATUS_LABELS: Record<SimulationStatus, string> = {
   cancelled: '已取消',
 };
 
-export const SIMULATION_STATUS_COLORS: Record<SimulationStatus, string> = {
+export const SIMULATION_STATUS_COLORS: Record<LegacySimulationStatus, string> = {
   draft: 'bg-gray-100 text-gray-700 border-gray-200',
   pending_approval: 'bg-yellow-100 text-yellow-700 border-yellow-200',
   approved: 'bg-blue-100 text-blue-700 border-blue-200',
@@ -389,7 +598,7 @@ export const SIMULATION_STATUS_COLORS: Record<SimulationStatus, string> = {
   cancelled: 'bg-slate-100 text-slate-600 border-slate-200',
 };
 
-export const SIMULATION_STATUS_DOT_COLORS: Record<SimulationStatus, string> = {
+export const SIMULATION_STATUS_DOT_COLORS: Record<LegacySimulationStatus, string> = {
   draft: 'bg-gray-400',
   pending_approval: 'bg-yellow-400',
   approved: 'bg-blue-400',

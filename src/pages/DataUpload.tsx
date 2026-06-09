@@ -1,8 +1,10 @@
-import { useState, useCallback, useRef } from 'react';
-import { useForm, Controller, useFieldArray } from 'react-hook-form';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { useForm, Controller, useFieldArray, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
+import dayjs from 'dayjs';
 import {
   Upload,
   FileText,
@@ -27,8 +29,10 @@ import {
   Zap,
   Info,
 } from 'lucide-react';
-import AppLayout from '@/components/AppLayout';
 import { cn } from '@/lib/utils';
+import { useSimulationStore } from '@/stores/simulationStore';
+import { useAuthStore } from '@/stores/authStore';
+import { useUiStore, type UploadedFileDraft, type UploadDraftRow } from '@/stores/uiStore';
 
 const soilTypes = [
   { value: 'black', label: '黑土', region: '东北平原' },
@@ -69,13 +73,16 @@ interface UploadedFile {
 }
 
 export default function DataUpload() {
+  const navigate = useNavigate();
+  const { user } = useAuthStore();
+  const { createTask } = useSimulationStore();
+  const { uploadDraft, saveUploadDraft, clearUploadDraft, showSuccess, showError } = useUiStore();
+
   const [dragActive, setDragActive] = useState(false);
   const [expanded, setExpanded] = useState(true);
-  const [files, setFiles] = useState<UploadedFile[]>([
-    { id: '1', name: 'metagenome_rhizosphere_A.fastq.gz', size: 284739201, type: 'FASTQ', progress: 100, status: 'done' },
-    { id: '2', name: '16S_amplicon_soil_B.fastq', size: 92847163, type: 'FASTQ', progress: 68, status: 'uploading' },
-  ]);
+  const [files, setFiles] = useState<UploadedFile[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const hasRestored = useRef(false);
 
   const defaultRows: FormData['rows'] = [
     { sampleId: 'A-001', ph: 6.8, organicMatter: 32.4, temperature: 18.5, moisture: 34.2, soilType: 'black', notes: '0-20cm 耕层' },
@@ -83,14 +90,59 @@ export default function DataUpload() {
     { sampleId: '', ph: NaN, organicMatter: NaN, temperature: NaN, moisture: NaN, soilType: '', notes: '' },
   ];
 
-  const { control, handleSubmit, watch, setValue, setError, formState: { errors, isValid, isSubmitting } } = useForm<FormData>({
+  const initialRows = (uploadDraft && uploadDraft.rows && uploadDraft.rows.length > 0)
+    ? (uploadDraft.rows as UploadDraftRow[]).map(r => ({
+        sampleId: r.sampleId || '',
+        ph: typeof r.ph === 'number' ? r.ph : NaN,
+        organicMatter: typeof r.organicMatter === 'number' ? r.organicMatter : NaN,
+        temperature: typeof r.temperature === 'number' ? r.temperature : NaN,
+        moisture: typeof r.moisture === 'number' ? r.moisture : NaN,
+        soilType: r.soilType || '',
+        notes: r.notes || '',
+      }))
+    : defaultRows;
+
+  const initialFiles = (uploadDraft && uploadDraft.files && uploadDraft.files.length > 0)
+    ? uploadDraft.files as UploadedFileDraft[]
+    : [
+        { id: '1', name: 'metagenome_rhizosphere_A.fastq.gz', size: 284739201, type: 'FASTQ', progress: 100, status: 'done' },
+        { id: '2', name: '16S_amplicon_soil_B.fastq', size: 92847163, type: 'FASTQ', progress: 68, status: 'uploading' },
+      ];
+
+  useEffect(() => {
+    if (!hasRestored.current) {
+      setFiles(initialFiles as UploadedFile[]);
+      hasRestored.current = true;
+    }
+  }, []);
+
+  const { control, handleSubmit, watch, setValue, formState: { errors, isValid, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(formSchema),
     mode: 'onChange',
-    defaultValues: { rows: defaultRows },
+    defaultValues: { rows: initialRows },
   });
 
   const { fields, append, remove } = useFieldArray({ control, name: 'rows' });
-  const watchRows = watch('rows');
+  const watchRows = useWatch({ control, name: 'rows' });
+
+  useEffect(() => {
+    const rows = watchRows || [];
+    const timer = setTimeout(() => {
+      saveUploadDraft({
+        rows: rows.map(r => ({
+          sampleId: r.sampleId,
+          ph: r.ph,
+          organicMatter: r.organicMatter,
+          temperature: r.temperature,
+          moisture: r.moisture,
+          soilType: r.soilType,
+          notes: r.notes,
+        })),
+        files,
+      });
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [watchRows, files, saveUploadDraft]);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -151,9 +203,68 @@ export default function DataUpload() {
     setFiles((prev) => prev.filter((f) => f.id !== id));
   };
 
+  const soilTypeLabelMap: Record<string, string> = soilTypes.reduce((acc, s) => {
+    acc[s.value] = s.label;
+    return acc;
+  }, {} as Record<string, string>);
+
   const onSubmit = (data: FormData) => {
-    console.log('提交数据:', data, files);
-    alert(`已提交 ${data.rows.length} 条理化数据，${files.filter(f => f.status === 'done').length} 个宏基因组文件`);
+    try {
+      const validRows = data.rows.filter(r => r.sampleId && !isNaN(r.ph) && !isNaN(r.organicMatter) && r.soilType);
+      const doneFiles = files.filter(f => f.status === 'done');
+
+      if (validRows.length === 0) {
+        showError('没有有效的样本数据，请先填写完整的理化参数', '数据校验失败');
+        return;
+      }
+      if (doneFiles.length === 0) {
+        showError('至少需要1个上传完成的宏基因组文件', '文件校验失败');
+        return;
+      }
+
+      let createdCount = 0;
+      const userId = user?.id || 'u-current';
+      const userName = user?.realName || '当前用户';
+      const todayStr = dayjs().format('YYYYMMDD');
+
+      validRows.forEach((row) => {
+        doneFiles.forEach((file) => {
+          const soilTypeLabel = soilTypeLabelMap[row.soilType] || row.soilType;
+          const taskName = `${row.sampleId}-${soilTypeLabel}-${todayStr}`;
+
+          createTask({
+            soilData: {
+              sampleId: row.sampleId,
+              ph: row.ph,
+              organicMatter: row.organicMatter,
+              temperature: row.temperature,
+              moisture: row.moisture,
+              soilType: soilTypeLabel,
+              notes: row.notes,
+            },
+            metagenomicsFileId: file.id,
+            fileName: file.name,
+            name: taskName,
+            createdBy: userId,
+            createdByName: userName,
+          });
+          createdCount++;
+        });
+      });
+
+      clearUploadDraft();
+      showSuccess(
+        `成功创建 ${createdCount} 个模拟任务（${validRows.length} 样本 × ${doneFiles.length} 文件）`,
+        '提交入库成功'
+      );
+
+      setTimeout(() => {
+        navigate('/simulations');
+      }, 600);
+    } catch (err) {
+      console.error('提交失败:', err);
+      showError(err instanceof Error ? err.message : '未知错误', '提交失败');
+    }
   };
 
   const formatSize = (b: number) => {
@@ -167,8 +278,7 @@ export default function DataUpload() {
   const doneFiles = files.filter(f => f.status === 'done').length;
 
   return (
-    <AppLayout>
-      <div className="space-y-6 max-w-[1600px] mx-auto">
+    <div className="space-y-6 max-w-[1600px] mx-auto">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
             <h1 className="font-display text-3xl font-bold text-forest-800 tracking-tight">
@@ -198,7 +308,7 @@ export default function DataUpload() {
             { label: '已录入样本', value: fields.length.toString(), icon: FlaskConical, color: 'text-forest-600', bg: 'bg-forest-gradient/10' },
             { label: '上传文件数', value: `${doneFiles}/${files.length}`, icon: FileCode, color: 'text-loam-600', bg: 'bg-loam-gradient/10' },
             { label: '总数据量', value: formatSize(totalFileSize), icon: Database, color: 'text-status-info', bg: 'bg-status-info/10' },
-            { label: '土壤类型覆盖', value: `${new Set(watchRows.filter(r => r.soilType).map(r => r.soilType)).size}类`, icon: Layers, color: 'text-status-success', bg: 'bg-status-success/10' },
+            { label: '土壤类型覆盖', value: `${new Set((watchRows || []).filter(r => r.soilType).map(r => r.soilType)).size}类`, icon: Layers, color: 'text-status-success', bg: 'bg-status-success/10' },
           ].map((s, i) => {
             const Icon = s.icon;
             return (
@@ -688,7 +798,25 @@ export default function DataUpload() {
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <button type="button" className="btn-ghost text-sm">
+              <button
+                type="button"
+                onClick={() => {
+                  saveUploadDraft({
+                    rows: (watchRows || []).map(r => ({
+                      sampleId: r.sampleId,
+                      ph: r.ph,
+                      organicMatter: r.organicMatter,
+                      temperature: r.temperature,
+                      moisture: r.moisture,
+                      soilType: r.soilType,
+                      notes: r.notes,
+                    })),
+                    files,
+                  });
+                  showSuccess('草稿已保存到本地，刷新页面后自动恢复', '草稿已保存');
+                }}
+                className="btn-ghost text-sm"
+              >
                 保存草稿
               </button>
               <button
@@ -715,6 +843,5 @@ export default function DataUpload() {
           </motion.div>
         </motion.form>
       </div>
-    </AppLayout>
   );
 }

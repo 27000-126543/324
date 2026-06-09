@@ -14,6 +14,7 @@ import ReportPreview from '@/pages/ReportPreview';
 import Recommendations from '@/pages/Recommendations';
 import ApprovalsCenter from '@/pages/ApprovalsCenter';
 import Notifications from '@/pages/Notifications';
+import WarningsCenter from '@/pages/WarningsCenter';
 import UserManagement from '@/pages/admin/UserManagement';
 import ThresholdManagement from '@/pages/admin/ThresholdManagement';
 import NotFound from '@/pages/NotFound';
@@ -73,6 +74,7 @@ function AppRoutes() {
         />
 
         <Route path="/notifications" element={<Notifications />} />
+        <Route path="/warnings" element={<WarningsCenter />} />
 
         <Route
           path="/admin/users"

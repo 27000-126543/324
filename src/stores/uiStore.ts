@@ -11,6 +11,31 @@ export interface ToastMessage {
   duration?: number;
 }
 
+export interface UploadedFileDraft {
+  id: string;
+  name: string;
+  size: number;
+  type: string;
+  progress: number;
+  status: 'uploading' | 'done' | 'error';
+}
+
+export interface UploadDraftRow {
+  sampleId: string;
+  ph: number;
+  organicMatter: number;
+  temperature: number;
+  moisture: number;
+  soilType: string;
+  notes?: string;
+}
+
+export interface UploadDraft {
+  rows: UploadDraftRow[];
+  files: UploadedFileDraft[];
+  savedAt?: string;
+}
+
 interface UiState {
   sidebarCollapsed: boolean;
   theme: Theme;
@@ -20,6 +45,7 @@ interface UiState {
   breadcrumbs: { label: string; path?: string }[];
   toasts: ToastMessage[];
   activeTab: string;
+  uploadDraft: UploadDraft | null;
 
   toggleSidebar: () => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
@@ -36,6 +62,8 @@ interface UiState {
   showError: (message: string, title?: string) => void;
   showWarning: (message: string, title?: string) => void;
   showInfo: (message: string, title?: string) => void;
+  saveUploadDraft: (draft: UploadDraft) => void;
+  clearUploadDraft: () => void;
 }
 
 const getSystemTheme = (): 'light' | 'dark' => {
@@ -68,6 +96,7 @@ export const useUiStore = create<UiState>()(
       breadcrumbs: [],
       toasts: [],
       activeTab: '',
+      uploadDraft: null,
 
       toggleSidebar: () => {
         set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed }));
@@ -141,12 +170,21 @@ export const useUiStore = create<UiState>()(
       showInfo: (message: string, title?: string) => {
         get().showToast({ type: 'info', message, title });
       },
+
+      saveUploadDraft: (draft: UploadDraft) => {
+        set({ uploadDraft: { ...draft, savedAt: new Date().toISOString() } });
+      },
+
+      clearUploadDraft: () => {
+        set({ uploadDraft: null });
+      },
     }),
     {
       name: 'ui-storage',
       partialize: (state) => ({
         sidebarCollapsed: state.sidebarCollapsed,
         theme: state.theme,
+        uploadDraft: state.uploadDraft,
       }),
       onRehydrateStorage: () => (state) => {
         if (state) {

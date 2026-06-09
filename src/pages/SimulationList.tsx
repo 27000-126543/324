@@ -129,8 +129,7 @@ export default function SimulationList() {
   };
 
   return (
-    <AppLayout>
-      <div className="space-y-5 min-w-0">
+    <div className="space-y-5 min-w-0">
         <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
           <div>
             <div className="flex items-center gap-3">
@@ -489,6 +488,5 @@ export default function SimulationList() {
           </div>
         </div>
       </div>
-    </AppLayout>
   );
 }

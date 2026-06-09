@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
-  SimulationStatus,
+  type LegacySimulationStatus as SimulationStatus,
   SIMULATION_STATUS_LABELS,
   SIMULATION_STATUS_COLORS,
   SIMULATION_STATUS_DOT_COLORS,
