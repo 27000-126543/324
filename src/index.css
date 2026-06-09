@@ -1,0 +1,174 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-forest-50: #F1F7F4;
+  --color-forest-100: #DCECE3;
+  --color-forest-200: #B4D5C3;
+  --color-forest-300: #86BBA0;
+  --color-forest-400: #579E7C;
+  --color-forest-500: #348260;
+  --color-forest-600: #1B4D3E;
+  --color-forest-700: #143D31;
+  --color-forest-800: #0F2E25;
+  --color-forest-900: #0A1F19;
+  --color-loam-500: #8B6914;
+  --color-loam-400: #B9952F;
+  --color-cream: #F5F1E8;
+  --color-success: #27AE60;
+  --color-warning: #E67E22;
+  --color-critical: #C0392B;
+  --color-info: #2563EB;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    background-color: var(--color-cream);
+    color: #1a2e28;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Lora', Georgia, serif;
+    letter-spacing: -0.01em;
+  }
+  ::selection {
+    background-color: rgba(27, 77, 62, 0.2);
+    color: var(--color-forest-800);
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: rgba(27, 77, 62, 0.04);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(27, 77, 62, 0.25);
+    border-radius: 8px;
+    border: 2px solid var(--color-cream);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(27, 77, 62, 0.4);
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-full font-medium text-sm transition-all duration-200 select-none focus:outline-none focus:ring-4 focus:ring-forest-600/15 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-forest-gradient text-white shadow-card hover:shadow-cardHover hover:-translate-y-0.5;
+  }
+  .btn-secondary {
+    @apply btn border border-forest-600/20 bg-white/80 text-forest-700 hover:bg-forest-50 hover:border-forest-600/40 backdrop-blur;
+  }
+  .btn-ghost {
+    @apply btn text-forest-700 hover:bg-forest-600/10;
+  }
+  .btn-danger {
+    @apply btn bg-status-critical text-white hover:brightness-110;
+  }
+  .btn-success {
+    @apply btn bg-status-success text-white hover:brightness-110;
+  }
+
+  .card {
+    @apply bg-white/85 backdrop-blur-sm rounded-2xl border border-forest-600/10 shadow-card overflow-hidden transition-all duration-300;
+  }
+  .card-hover:hover {
+    @apply shadow-cardHover border-forest-600/20;
+  }
+  .card-header {
+    @apply px-6 py-4 border-b border-forest-600/10 flex items-center justify-between gap-4;
+  }
+  .card-body {
+    @apply p-6;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+  .badge-success {
+    @apply badge bg-status-success/10 text-status-success;
+  }
+  .badge-warning {
+    @apply badge bg-status-warning/10 text-status-warning;
+  }
+  .badge-critical {
+    @apply badge bg-status-critical/10 text-status-critical animate-pulse-slow;
+  }
+  .badge-info {
+    @apply badge bg-status-info/10 text-status-info;
+  }
+  .badge-pending {
+    @apply badge bg-loam-500/10 text-loam-600;
+  }
+  .badge-fallback {
+    @apply badge bg-status-fallback/10 text-status-fallback;
+  }
+
+  .input-field {
+    @apply w-full px-4 py-2.5 rounded-xl border border-forest-600/15 bg-white/90 text-forest-800 placeholder:text-forest-600/40 transition-all duration-200 focus:outline-none focus:border-forest-500 focus:ring-4 focus:ring-forest-600/10 hover:border-forest-600/25;
+  }
+  .input-label {
+    @apply block text-sm font-medium text-forest-800 mb-1.5;
+  }
+  .input-hint {
+    @apply mt-1 text-xs text-forest-600/60;
+  }
+  .input-error {
+    @apply mt-1 text-xs text-status-critical;
+  }
+
+  .nav-item {
+    @apply flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-forest-700/80 transition-all duration-200 hover:bg-forest-600/[0.08] hover:text-forest-800;
+  }
+  .nav-item-active {
+    @apply nav-item bg-forest-gradient text-white shadow-card hover:text-white;
+  }
+
+  .section-title {
+    @apply font-display text-xl font-semibold text-forest-800 tracking-tight;
+  }
+  .section-subtitle {
+    @apply text-sm text-forest-600/70 mt-1;
+  }
+
+  .divider {
+    @apply h-px bg-gradient-to-r from-transparent via-forest-600/15 to-transparent my-6;
+  }
+
+  .kpi-card {
+    @apply relative overflow-hidden rounded-2xl p-6 border border-white/60 shadow-card transition-all duration-300 hover:shadow-cardHover hover:-translate-y-1;
+  }
+
+  .timeline-dot {
+    @apply w-4 h-4 rounded-full border-4 transition-all duration-500;
+  }
+
+  .heatmap-cell {
+    @apply transition-all duration-200 hover:ring-2 hover:ring-white hover:shadow-md cursor-pointer;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .bg-grain {
+    background-image: var(--tw-bg-noise);
+    background-repeat: repeat;
+    background-size: 160px 160px;
+  }
+  .mask-fade-b {
+    -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+    mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+  }
+}
